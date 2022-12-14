@@ -64,8 +64,9 @@ function init() {
 		});
 	} else {
 		const mediaElement = new Audio(file);
-		// mediaElement.play();
-		mediaElement.pause();
+		mediaElement.preload = "None";
+		mediaElement.play();
+		// mediaElement.pause();
 		audio.setMediaElementSource(mediaElement);
 	}
 	analyser = new THREE.AudioAnalyser(audio, fftSize);
@@ -217,7 +218,7 @@ function animate() {
 	uniforms.tAudioData.value = new THREE.Vector4(
 		analyser.data[5],
 		analyser.data[20],
-		analyser.data[40],
+		analyser.data[45],
 		analyser.data[50]
 	);
 

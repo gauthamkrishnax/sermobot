@@ -150,9 +150,9 @@ void main() {
 
     // float r = 1.0 + sin(uTime)*0.03; 
     float r = 1.0 + tAudioData.x/1000.0; 
-    float r1 = 1.02 + tAudioData.y/1000.0; 
-    float r2 = 1.04 + tAudioData.z/1000.0; 
-    float r3 = 1.06 + tAudioData.w/1000.0; 
+    float r1 = 1.12 + tAudioData.y/1000.0; 
+    float r2 = 1.08 + tAudioData.z/1000.0; 
+    float r3 = 1.04 + tAudioData.w/1000.0; 
     
     circle = extractAlpha(paintCircle(uv, center, r, 0.03), 1e-5);
     circle += extractAlpha(paintCircle(uv, center, r2, 0.01),1e-5);

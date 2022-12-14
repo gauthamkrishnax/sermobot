@@ -7,19 +7,26 @@
   <link rel="stylesheet" href="style.css">
   <script async src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"></script>
   <title>Shading Test</title>
+  <script>
+    prompt("Hello")
+  </script>
 </head>
 
 <body>
   <div class="test">
-    <h1>
-      Hi! I don't know what I am or where I am or how I am. Can you please help me?
+    <h1 id="response">
+      Loading...
     </h1>
+    <input type="text" id="user_response" name="user_response" value="">
+    <button type="button" onclick="getInputValue();">Get Value</button>
   </div>
   <div id="three">
 
   </div>
   <script type="module" src="/main.js"></script>
   <script>
+
+    const headingDom = document.querySelector("#response");
     async function query(data) {
       const response = await fetch(
         "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill",
@@ -33,15 +40,44 @@
       return result;
     }
 
+    let responseKey = {}
+
     query({
       "inputs": {
-        "past_user_inputs": ["Which movie is the best ?"],
-        "generated_responses": ["It's Die Hard for sure."],
-        "text": "Can you explain why ?"
+        "text": "Hi"
       }
     }).then((response) => {
-      console.log(JSON.stringify(response));
+      console.log(response)
+      responseKey = {
+        "inputs": {
+          "past_user_inputs": response.conversation.past_user_inputs,
+          "generated_responses": response.conversation.generated_responses,
+          "text": ""
+        }
+      }
+      headingDom.textContent = response.generated_text;
     });
+
+
+    function getInputValue() {
+      let inputVal = document.getElementById("user_response").value;
+      responseKey.inputs.text += inputVal;
+      query(responseKey).then((response) => {
+        console.log(response)
+        responseKey = {
+          "inputs": {
+            "past_user_inputs": response.conversation.past_user_inputs,
+            "generated_responses": response.conversation.generated_responses,
+            "text": ""
+          }
+        }
+        headingDom.textContent = response.generated_text;
+        var msg = new SpeechSynthesisUtterance();
+        msg.text = response.generated_text;
+        window.speechSynthesis.speak(msg);
+        console.log(window.speechSynthesis)
+      })
+    }
   </script>
 </body>
 
