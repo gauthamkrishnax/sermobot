@@ -20,7 +20,67 @@ import vertexShader from "./shaders/vertex.glsl?raw";
 let renderer, scene, composer, clock, camera, stats;
 let torus, plane;
 let orb;
-let analyser;
+let analyser, bloomPass;
+let mediaElement, audio;
+
+const domLoader = document.querySelector(".loader");
+setTimeout(() => {
+	gsap.to(".loader", {
+		opacity: 0,
+		display: "none",
+	});
+}, 3000);
+
+const agreebtn = document.querySelector("#agree-btn");
+
+function loadInit() {
+	gsap.to(".consent", {
+		opacity: 0,
+		duration: 1,
+		display: "none",
+	});
+	gsap.to(camera.position, {
+		z: 5,
+		duration: 3,
+	});
+	gsap.to(".test", {
+		opacity: 1,
+		delay: 3,
+	});
+
+	const fftSize = 128;
+	const listener = new THREE.AudioListener();
+	audio = new THREE.Audio(listener);
+	const file = "./static/bg.mp3";
+	analyser = new THREE.AudioAnalyser(audio, fftSize);
+
+	if (/(iPad|iPhone|iPod)/g.test(navigator.userAgent)) {
+		const loader = new THREE.AudioLoader();
+		loader.load(file, function (buffer) {
+			audio.setBuffer(buffer);
+			audio.play();
+		});
+	} else {
+		mediaElement = new Audio(file);
+		mediaElement.preload = "None";
+		mediaElement.play();
+		mediaElement.volume = 0.4;
+		mediaElement.loop = true;
+		audio.setMediaElementSource(mediaElement);
+	}
+	domLoader.remove();
+}
+
+agreebtn.addEventListener("click", () => {
+	loadInit();
+});
+
+const disagreebtn = document.querySelector("#disagree-btn");
+disagreebtn.addEventListener("click", () => {
+	loadInit();
+	mediaElement.muted = true;
+	audio.muted = true;
+});
 
 const pointer = { x: 0, y: 0 };
 
@@ -49,28 +109,6 @@ init();
 animate();
 
 function init() {
-	const fftSize = 128;
-	const listener = new THREE.AudioListener();
-
-	const audio = new THREE.Audio(listener);
-	const file = "./static/starboy.mp3";
-
-	if (/(iPad|iPhone|iPod)/g.test(navigator.userAgent)) {
-		const loader = new THREE.AudioLoader();
-		loader.load(file, function (buffer) {
-			audio.setBuffer(buffer);
-			audio.play();
-			audio.pause();
-		});
-	} else {
-		const mediaElement = new Audio(file);
-		mediaElement.preload = "None";
-		mediaElement.play();
-		// mediaElement.pause();
-		audio.setMediaElementSource(mediaElement);
-	}
-	analyser = new THREE.AudioAnalyser(audio, fftSize);
-
 	clock = new THREE.Clock();
 
 	scene = new THREE.Scene();
@@ -82,7 +120,7 @@ function init() {
 		0.1,
 		1000
 	);
-	camera.position.z = 5;
+	camera.position.z = 1;
 
 	renderer = new THREE.WebGLRenderer({ antialias: true });
 	renderer.toneMapping = THREE.CineonToneMapping;
@@ -99,7 +137,7 @@ function init() {
 	effectVignette.uniforms["offset"].value = params.vigOffset;
 	effectVignette.uniforms["darkness"].value = params.vigDarkness;
 
-	const bloomPass = new UnrealBloomPass(
+	bloomPass = new UnrealBloomPass(
 		new THREE.Vector2(window.innerWidth, window.innerHeight),
 		1.5,
 		0.4,
@@ -139,51 +177,52 @@ function init() {
 	orb = new THREE.Group();
 	orb.add(torus);
 	orb.add(plane);
+	orb.position.y += 0.4;
 	scene.add(orb);
 
-	stats = new Stats();
-	document.body.appendChild(stats.dom);
+	// stats = new Stats();
+	// document.body.appendChild(stats.dom);
 
-	const gui = new GUI();
+	// const gui = new GUI();
 
-	var bloomFolder = gui.addFolder("Bloom");
-	bloomFolder.add(params, "exposure", 0.1, 2).onChange(function (value) {
-		renderer.toneMappingExposure = Math.pow(value, 4.0);
-	});
+	// var bloomFolder = gui.addFolder("Bloom");
+	// bloomFolder.add(params, "exposure", 0.1, 2).onChange(function (value) {
+	// 	renderer.toneMappingExposure = Math.pow(value, 4.0);
+	// });
 
-	bloomFolder
-		.add(params, "bloomThreshold", 0.0, 1.0)
-		.onChange(function (value) {
-			bloomPass.threshold = Number(value);
-		});
+	// bloomFolder
+	// 	.add(params, "bloomThreshold", 0.0, 1.0)
+	// 	.onChange(function (value) {
+	// 		bloomPass.threshold = Number(value);
+	// 	});
 
-	bloomFolder.add(params, "bloomStrength", 0.0, 4.0).onChange(function (value) {
-		bloomPass.strength = Number(value);
-	});
+	// bloomFolder.add(params, "bloomStrength", 0.0, 4.0).onChange(function (value) {
+	// 	bloomPass.strength = Number(value);
+	// });
 
-	bloomFolder
-		.add(params, "bloomRadius", 0.0, 2.0)
-		.step(0.01)
-		.onChange(function (value) {
-			bloomPass.radius = Number(value);
-		});
+	// bloomFolder
+	// 	.add(params, "bloomRadius", 0.0, 2.0)
+	// 	.step(0.01)
+	// 	.onChange(function (value) {
+	// 		bloomPass.radius = Number(value);
+	// 	});
 
-	var vigFolder = gui.addFolder("Vignette");
-	vigFolder.add(params, "vigOffset", 0.0, 3.0).onChange(function (value) {
-		effectVignette.uniforms["offset"].value = Number(value);
-	});
+	// var vigFolder = gui.addFolder("Vignette");
+	// vigFolder.add(params, "vigOffset", 0.0, 3.0).onChange(function (value) {
+	// 	effectVignette.uniforms["offset"].value = Number(value);
+	// });
 
-	vigFolder.add(params, "vigDarkness", 0.0, 3.0).onChange(function (value) {
-		effectVignette.uniforms["darkness"].value = Number(value);
-	});
+	// vigFolder.add(params, "vigDarkness", 0.0, 3.0).onChange(function (value) {
+	// 	effectVignette.uniforms["darkness"].value = Number(value);
+	// });
 
-	var miscFolder = gui.addFolder("Misc");
-	miscFolder
-		.add(params, "speed", 0.0, 10.0)
-		.step(0.01)
-		.onChange(function (value) {
-			uniforms.uSpeed.value = Number(value);
-		});
+	// var miscFolder = gui.addFolder("Misc");
+	// miscFolder
+	// 	.add(params, "speed", 0.0, 10.0)
+	// 	.step(0.01)
+	// 	.onChange(function (value) {
+	// 		uniforms.uSpeed.value = Number(value);
+	// 	});
 
 	window.addEventListener("resize", onWindowResize);
 	document.addEventListener("pointermove", onPointerMove);
@@ -213,17 +252,128 @@ function onWindowResize() {
 function animate() {
 	requestAnimationFrame(animate);
 	const elapsedTime = clock.getElapsedTime();
-
-	analyser.getFrequencyData();
-	uniforms.tAudioData.value = new THREE.Vector4(
-		analyser.data[5],
-		analyser.data[20],
-		analyser.data[45],
-		analyser.data[50]
-	);
-
+	if (analyser) {
+		analyser.getFrequencyData();
+		uniforms.tAudioData.value = new THREE.Vector4(
+			analyser.data[5],
+			analyser.data[20],
+			analyser.data[45],
+			analyser.data[50]
+		);
+	} else {
+		uniforms.tAudioData.value = new THREE.Vector4(0, 0, 0, 0);
+	}
 	uniforms.uTime.value = elapsedTime;
 	orb.position.y += Math.sin(1.0 + -elapsedTime) * 0.003;
-	stats.update();
+	// stats.update();
 	composer.render();
+}
+
+let responseKey = {
+	inputs: {
+		past_user_inputs: [],
+		generated_responses: [],
+		text: "",
+	},
+};
+
+const headingDom = document.querySelector("#response");
+const sendButton = document.querySelector("#sendBtn");
+
+sendButton.addEventListener("click", () => {
+	getInputValue();
+});
+
+const inputField = document.getElementById("user_response");
+
+inputField.addEventListener("keypress", function (e) {
+	if (e.key === "Enter") {
+		getInputValue();
+	}
+});
+
+async function query(data) {
+	gsap.to("#response", {
+		opacity: 0,
+	});
+	uniforms.uSpeed.value = 10.0;
+	const response = await fetch(
+		"https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill",
+		{
+			headers: {
+				Authorization: "Bearer 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",
+			},
+			method: "POST",
+			body: JSON.stringify(data),
+		}
+	);
+	const result = await response.json();
+	return result;
+}
+
+// query({
+// 	inputs: {
+// 		text: "Hello mate",
+// 	},
+// }).then((response) => {
+// 	console.log(response);
+// 	uniforms.uSpeed.value = 1.0;
+// 	responseKey = {
+// 		inputs: {
+// 			past_user_inputs: response.conversation.past_user_inputs,
+// 			generated_responses: response.conversation.generated_responses,
+// 			text: "",
+// 		},
+// 	};
+// 	setTimeout(() => {
+// 		headingDom.textContent = response.generated_text;
+// 		var msg = new SpeechSynthesisUtterance();
+// 		msg.text = response.generated_text;
+// 		window.speechSynthesis.speak(msg);
+// 		gsap.to("#response", {
+// 			opacity: 1,
+// 		});
+// 	}, 3000);
+// });
+
+function getInputValue() {
+	let inputVal = inputField.value;
+	inputField.value = "";
+	if (inputVal == "*abel*") {
+		mediaElement.pause();
+		// console.log(audio);
+		const mediaElement2 = new Audio("./static/starboy.mp3");
+		mediaElement2.preload = "None";
+		// mediaElement.volume = 0.4;
+		// mediaElement.loop = true;
+		audio.setMediaElementSource(mediaElement2);
+		mediaElement2.play();
+		// console.log(audio);
+		// audio.onEnded(() => {
+		// 	loadInit();
+		// });
+
+		// audio.source.mediaElement.src = "./static/starboy.mp3";
+	} else {
+		responseKey.inputs.text += inputVal;
+		query(responseKey).then((response) => {
+			gsap.to(bloomPass, { threshold: 0.3, duration: 0.3 });
+			gsap.to(bloomPass, { threshold: 0.53, delay: 0.3 });
+			uniforms.uSpeed.value = 1.0;
+			responseKey = {
+				inputs: {
+					past_user_inputs: response.conversation.past_user_inputs,
+					generated_responses: response.conversation.generated_responses,
+					text: "",
+				},
+			};
+			headingDom.textContent = response.generated_text;
+			var msg = new SpeechSynthesisUtterance();
+			msg.text = response.generated_text;
+			window.speechSynthesis.speak(msg);
+			gsap.to("#response", {
+				opacity: 1,
+			});
+		});
+	}
 }
