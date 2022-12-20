@@ -1,12 +1,7 @@
 import { gsap } from "gsap";
-
 import * as THREE from "three";
 
-import Stats from "three/addons/libs/stats.module.js";
-import { GUI } from "three/addons/libs/lil-gui.module.min.js";
-
 //PostProcessing
-
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
@@ -124,6 +119,7 @@ function init() {
 
 	renderer = new THREE.WebGLRenderer({ antialias: true });
 	renderer.toneMapping = THREE.CineonToneMapping;
+	renderer.setPixelRatio(window.devicePixelRatio);
 	renderer.setSize(window.innerWidth, window.innerHeight);
 	renderer.domElement.setAttribute("id", "3dWindow");
 	const container = document.querySelector("#three");
@@ -180,50 +176,6 @@ function init() {
 	orb.position.y += 0.4;
 	scene.add(orb);
 
-	// stats = new Stats();
-	// document.body.appendChild(stats.dom);
-
-	// const gui = new GUI();
-
-	// var bloomFolder = gui.addFolder("Bloom");
-	// bloomFolder.add(params, "exposure", 0.1, 2).onChange(function (value) {
-	// 	renderer.toneMappingExposure = Math.pow(value, 4.0);
-	// });
-
-	// bloomFolder
-	// 	.add(params, "bloomThreshold", 0.0, 1.0)
-	// 	.onChange(function (value) {
-	// 		bloomPass.threshold = Number(value);
-	// 	});
-
-	// bloomFolder.add(params, "bloomStrength", 0.0, 4.0).onChange(function (value) {
-	// 	bloomPass.strength = Number(value);
-	// });
-
-	// bloomFolder
-	// 	.add(params, "bloomRadius", 0.0, 2.0)
-	// 	.step(0.01)
-	// 	.onChange(function (value) {
-	// 		bloomPass.radius = Number(value);
-	// 	});
-
-	// var vigFolder = gui.addFolder("Vignette");
-	// vigFolder.add(params, "vigOffset", 0.0, 3.0).onChange(function (value) {
-	// 	effectVignette.uniforms["offset"].value = Number(value);
-	// });
-
-	// vigFolder.add(params, "vigDarkness", 0.0, 3.0).onChange(function (value) {
-	// 	effectVignette.uniforms["darkness"].value = Number(value);
-	// });
-
-	// var miscFolder = gui.addFolder("Misc");
-	// miscFolder
-	// 	.add(params, "speed", 0.0, 10.0)
-	// 	.step(0.01)
-	// 	.onChange(function (value) {
-	// 		uniforms.uSpeed.value = Number(value);
-	// 	});
-
 	window.addEventListener("resize", onWindowResize);
 	document.addEventListener("pointermove", onPointerMove);
 }
@@ -231,11 +183,10 @@ function init() {
 function onPointerMove(event) {
 	pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
 	pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-	// orb.rotation.y = pointer.x * 0.3;
-	// orb.rotation.x = -pointer.y * 0.3;
+
 	gsap.to(orb.rotation, {
-		x: -pointer.y * 0.2,
-		y: pointer.x * 0.2,
+		x: -pointer.y * 0.3,
+		y: pointer.x * 0.3,
 		delay: 0.1,
 		ease: "elastic.out",
 		duration: 2,
@@ -265,7 +216,6 @@ function animate() {
 	}
 	uniforms.uTime.value = elapsedTime;
 	orb.position.y += Math.sin(1.0 + -elapsedTime) * 0.003;
-	// stats.update();
 	composer.render();
 }
 
@@ -311,31 +261,6 @@ async function query(data) {
 	return result;
 }
 
-// query({
-// 	inputs: {
-// 		text: "Hello mate",
-// 	},
-// }).then((response) => {
-// 	console.log(response);
-// 	uniforms.uSpeed.value = 1.0;
-// 	responseKey = {
-// 		inputs: {
-// 			past_user_inputs: response.conversation.past_user_inputs,
-// 			generated_responses: response.conversation.generated_responses,
-// 			text: "",
-// 		},
-// 	};
-// 	setTimeout(() => {
-// 		headingDom.textContent = response.generated_text;
-// 		var msg = new SpeechSynthesisUtterance();
-// 		msg.text = response.generated_text;
-// 		window.speechSynthesis.speak(msg);
-// 		gsap.to("#response", {
-// 			opacity: 1,
-// 		});
-// 	}, 3000);
-// });
-
 function getInputValue() {
 	let inputVal = inputField.value;
 	inputField.value = "";
@@ -344,16 +269,8 @@ function getInputValue() {
 		// console.log(audio);
 		const mediaElement2 = new Audio("./static/starboy.mp3");
 		mediaElement2.preload = "None";
-		// mediaElement.volume = 0.4;
-		// mediaElement.loop = true;
 		audio.setMediaElementSource(mediaElement2);
 		mediaElement2.play();
-		// console.log(audio);
-		// audio.onEnded(() => {
-		// 	loadInit();
-		// });
-
-		// audio.source.mediaElement.src = "./static/starboy.mp3";
 	} else {
 		responseKey.inputs.text += inputVal;
 		query(responseKey).then((response) => {
