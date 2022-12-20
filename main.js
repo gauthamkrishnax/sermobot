@@ -46,7 +46,7 @@ function loadInit() {
 	const fftSize = 128;
 	const listener = new THREE.AudioListener();
 	audio = new THREE.Audio(listener);
-	const file = "./static/bg.mp3";
+	const file = import.meta.env.PROD ? "/bg.mp3" : "./static/bg.mp3";
 	analyser = new THREE.AudioAnalyser(audio, fftSize);
 
 	if (/(iPad|iPhone|iPod)/g.test(navigator.userAgent)) {
@@ -267,7 +267,9 @@ function getInputValue() {
 	if (inputVal == "*abel*") {
 		mediaElement.pause();
 		// console.log(audio);
-		const mediaElement2 = new Audio("./static/starboy.mp3");
+		const mediaElement2 = new Audio(
+			import.meta.env.PROD ? "/starboy.mp3" : "./static/starboy.mp3"
+		);
 		mediaElement2.preload = "None";
 		audio.setMediaElementSource(mediaElement2);
 		mediaElement2.play();
