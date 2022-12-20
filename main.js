@@ -173,7 +173,7 @@ function init() {
 	orb = new THREE.Group();
 	orb.add(torus);
 	orb.add(plane);
-	orb.position.y += 0.4;
+	orb.position.y += 0.3;
 	scene.add(orb);
 
 	window.addEventListener("resize", onWindowResize);
