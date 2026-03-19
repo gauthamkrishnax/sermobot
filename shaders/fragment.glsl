@@ -1,15 +1,14 @@
 // Author: Gautham Krishna
 // Title: AI Halo
 
-#ifdef GL_ES
 precision mediump float;
-#endif
 
 uniform float uTime;
 uniform vec4 tAudioData;
 uniform float uSpeed;
 
-varying vec2 vUv;
+in vec2 vUv;
+out vec4 fragColor;
 
 
 #define BG_COLOR (vec3(sin(uTime)*0.5+0.5) * 0.0 + vec3(0.0))
@@ -185,5 +184,5 @@ void main() {
     }
 
     vec4 color = extractAlpha(light*vec3(0.09,0.02,0.08), 1e-1);
-    gl_FragColor = (col+col1+col2+col3+circle+color );
+    fragColor = (col+col1+col2+col3+circle+color );
 }

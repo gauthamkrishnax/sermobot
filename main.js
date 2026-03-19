@@ -12,7 +12,9 @@ import { VignetteShader } from "three/addons/shaders/VignetteShader.js";
 import fragmentShader from "./shaders/fragment.glsl?raw";
 import vertexShader from "./shaders/vertex.glsl?raw";
 
-let renderer, scene, composer, clock, camera, stats;
+let renderer, scene, composer, camera, stats;
+/** Elapsed seconds for animation (avoids deprecated THREE.Clock; THREE.Timer not exported in r183). */
+let animTimeBaseMs = null;
 let torus, plane;
 let orb;
 let analyser, bloomPass;
@@ -74,17 +76,24 @@ agreebtn.addEventListener("click", () => {
 const disagreebtn = document.querySelector("#disagree-btn");
 disagreebtn.addEventListener("click", () => {
 	loadInit();
-	mediaElement.muted = true;
-	audio.muted = true;
+	if (mediaElement) mediaElement.muted = true;
+	if (audio) audio.muted = true;
 });
 
 const pointer = { x: 0, y: 0 };
 
 const uniforms = {
 	uTime: { value: 0 },
-	tAudioData: { value: null },
+	tAudioData: { value: new THREE.Vector4(0, 0, 0, 0) },
 	uSpeed: { value: 1.0 },
 };
+/** Smoothed FFT bins — raw analyser data is noisy and causes harsh flicker in the shader. */
+const smoothedAudio = new THREE.Vector4(0, 0, 0, 0);
+const AUDIO_SMOOTH = 0.12;
+
+function clampPixelRatio() {
+	return Math.min(window.devicePixelRatio || 1, 2);
+}
 
 const params = {
 	//Bloom
@@ -105,8 +114,6 @@ init();
 animate();
 
 function init() {
-	clock = new THREE.Clock();
-
 	scene = new THREE.Scene();
 	scene.background = new THREE.Color("rgb(0,0,50)");
 
@@ -120,7 +127,7 @@ function init() {
 
 	renderer = new THREE.WebGLRenderer({ antialias: true });
 	renderer.toneMapping = THREE.CineonToneMapping;
-	renderer.setPixelRatio(window.devicePixelRatio);
+	renderer.setPixelRatio(clampPixelRatio());
 	renderer.setSize(window.innerWidth, window.innerHeight);
 	renderer.domElement.setAttribute("id", "3dWindow");
 	const container = document.querySelector("#three");
@@ -145,6 +152,8 @@ function init() {
 	bloomPass.radius = params.bloomRadius;
 
 	composer = new EffectComposer(renderer);
+	composer.setPixelRatio(renderer.getPixelRatio());
+	composer.setSize(window.innerWidth, window.innerHeight);
 	composer.addPass(renderScene);
 	composer.addPass(bloomPass);
 	composer.addPass(effectVignette);
@@ -155,18 +164,24 @@ function init() {
 	const PlaneMaterial = new THREE.RawShaderMaterial({
 		vertexShader: vertexShader,
 		fragmentShader: fragmentShader,
+		// Lets Three inject `#version 300 es` *first*; own #version after its defines fails compile.
+		glslVersion: THREE.GLSL3,
 		side: THREE.DoubleSide,
 		transparent: true,
+		depthWrite: false,
 		uniforms: uniforms,
 	});
 	const material = new THREE.MeshBasicMaterial({
 		color: new THREE.Color("rgb(0, 100, 200)"),
 		wireframe: true,
 		transparent: true,
+		depthWrite: false,
 	});
 
 	torus = new THREE.Mesh(geometry, material);
+	torus.renderOrder = 0;
 	plane = new THREE.Mesh(PlaneGeometry, PlaneMaterial);
+	plane.renderOrder = 1;
 
 	plane.position.z += 0.3;
 	torus.position.z += 0.2;
@@ -198,35 +213,111 @@ function onWindowResize() {
 	camera.aspect = window.innerWidth / window.innerHeight;
 	camera.updateProjectionMatrix();
 
+	const pr = clampPixelRatio();
+	renderer.setPixelRatio(pr);
 	renderer.setSize(window.innerWidth, window.innerHeight);
+	composer.setPixelRatio(pr);
+	composer.setSize(window.innerWidth, window.innerHeight);
 }
 
 function animate() {
 	requestAnimationFrame(animate);
-	const elapsedTime = clock.getElapsedTime();
+	if (animTimeBaseMs === null) animTimeBaseMs = performance.now();
+	const elapsedTime = (performance.now() - animTimeBaseMs) * 0.001;
 	if (analyser) {
 		analyser.getFrequencyData();
-		uniforms.tAudioData.value = new THREE.Vector4(
-			analyser.data[5],
-			analyser.data[20],
-			analyser.data[45],
-			analyser.data[50]
-		);
+		const d = analyser.data;
+		const ax = d[5] ?? 0;
+		const ay = d[20] ?? 0;
+		const az = d[45] ?? 0;
+		const aw = d[50] ?? 0;
+		const s = AUDIO_SMOOTH;
+		smoothedAudio.x += (ax - smoothedAudio.x) * s;
+		smoothedAudio.y += (ay - smoothedAudio.y) * s;
+		smoothedAudio.z += (az - smoothedAudio.z) * s;
+		smoothedAudio.w += (aw - smoothedAudio.w) * s;
+		uniforms.tAudioData.value.copy(smoothedAudio);
 	} else {
-		uniforms.tAudioData.value = new THREE.Vector4(0, 0, 0, 0);
+		smoothedAudio.set(0, 0, 0, 0);
+		uniforms.tAudioData.value.set(0, 0, 0, 0);
 	}
 	uniforms.uTime.value = elapsedTime;
 	orb.position.y += Math.sin(1.0 + -elapsedTime) * 0.003;
 	composer.render();
 }
 
-let responseKey = {
-	inputs: {
-		past_user_inputs: [],
-		generated_responses: [],
-		text: "",
-	},
-};
+const POLLINATIONS_CHAT_URL =
+	"https://gen.pollinations.ai/v1/chat/completions";
+
+const SYSTEM_PROMPT =
+	"You are Sermobot, a wise, slightly mysterious luminous orb. " +
+	"Reply in 1–3 short sentences; warm and concise.";
+
+let chatMessages = [{ role: "system", content: SYSTEM_PROMPT }];
+
+/** Max non-system messages per request — keeps prompt under small provider context limits. */
+const CHAT_API_MAX_MESSAGES = 6;
+
+/** Avoid one huge paste eating the whole context (chars per user/assistant message). */
+const CHAT_MAX_CHARS_PER_MESSAGE = 2000;
+
+/**
+ * Pollinations may route `model: "openai"` to a reasoning model (e.g. gpt-5-mini). Those models
+ * spend completion budget on internal `reasoning_tokens`; if max_tokens is too low, content is "".
+ */
+const CHAT_MAX_TOKENS = 4096;
+
+/**
+ * @param {{ role: string, content: string }} msg
+ */
+function clampChatMessage(msg) {
+	if (!msg?.content || typeof msg.content !== "string") return msg;
+	if (msg.content.length <= CHAT_MAX_CHARS_PER_MESSAGE) return msg;
+	return {
+		...msg,
+		content: msg.content.slice(0, CHAT_MAX_CHARS_PER_MESSAGE) + "\n…",
+	};
+}
+
+/**
+ * OpenAI-compatible APIs may return `message.content` as a string or a parts array.
+ * @param {unknown} content
+ * @returns {string}
+ */
+function assistantTextFromContent(content) {
+	if (content == null) return "";
+	if (typeof content === "string") return content.trim();
+	if (Array.isArray(content)) {
+		return content
+			.map((part) => {
+				if (typeof part === "string") return part;
+				if (part && typeof part === "object") {
+					if (typeof part.text === "string") return part.text;
+					if (typeof part.content === "string") return part.content;
+				}
+				return "";
+			})
+			.join("")
+			.trim();
+	}
+	return String(content).trim();
+}
+
+/**
+ * System + recent tail; drop leading assistant turns so the sequence starts with `user`.
+ * @param {Array<{ role: string, content: string }>} messages
+ */
+function messagesForChatApi(messages) {
+	if (messages.length <= 1) return messages;
+	const system = messages[0];
+	const rest = messages.slice(1);
+	let tail = rest.slice(-CHAT_API_MAX_MESSAGES);
+	while (tail.length && tail[0].role !== "user") {
+		tail = tail.slice(1);
+	}
+	if (!tail.length) tail = rest.slice(-1);
+	return [system, ...tail.map(clampChatMessage)];
+}
 
 const headingDom = document.querySelector("#response");
 const sendButton = document.querySelector("#sendBtn");
@@ -243,58 +334,146 @@ inputField.addEventListener("keypress", function (e) {
 	}
 });
 
-async function query(data) {
-	gsap.to("#response", {
-		opacity: 0,
-	});
-	uniforms.uSpeed.value = 10.0;
-	const response = await fetch(
-		"https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill",
-		{
-			headers: {
-				Authorization: "Bearer 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",
-			},
+/**
+ * @returns {Promise<string>}
+ */
+async function queryPollinations() {
+	const apiKey = import.meta.env.VITE_POLLINATIONS_API_KEY;
+	if (!apiKey?.trim()) {
+		throw new Error(
+			"Add VITE_POLLINATIONS_API_KEY to a .env file (see .env.example)."
+		);
+	}
+
+	const send = async (messages) => {
+		const response = await fetch(POLLINATIONS_CHAT_URL, {
 			method: "POST",
-			body: JSON.stringify(data),
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${apiKey.trim()}`,
+			},
+			body: JSON.stringify({
+				model: "openai",
+				messages,
+				max_tokens: CHAT_MAX_TOKENS,
+				temperature: 0.85,
+			}),
+		});
+		let data;
+		try {
+			data = await response.json();
+		} catch {
+			throw new Error("Invalid response from Pollinations.");
 		}
-	);
-	const result = await response.json();
-	return result;
+		return { response, data };
+	};
+
+	let messages = messagesForChatApi(chatMessages);
+	let { response, data } = await send(messages);
+
+	if (!response.ok) {
+		const msg =
+			data?.error?.message ||
+			data?.message ||
+			`Chat request failed (${response.status})`;
+		throw new Error(msg);
+	}
+
+	let text = assistantTextFromContent(data?.choices?.[0]?.message?.content);
+
+	// Retry with a shorter window — same symptom when context is too large or the gateway misbehaves.
+	if (!text && messages.length > 3) {
+		const rest = chatMessages.slice(1);
+		let shortTail = rest.slice(-4);
+		while (shortTail.length && shortTail[0].role !== "user") {
+			shortTail = shortTail.slice(1);
+		}
+		const shortMsgs = [chatMessages[0], ...shortTail.map(clampChatMessage)];
+		if (shortMsgs.length !== messages.length) {
+			({ response, data } = await send(shortMsgs));
+			if (response.ok) {
+				text = assistantTextFromContent(
+					data?.choices?.[0]?.message?.content
+				);
+			}
+		}
+	}
+
+	// Last resort: system + this turn only (empty + finish_reason "length" often means prompt filled the window).
+	if (!text) {
+		const last = chatMessages[chatMessages.length - 1];
+		if (last?.role === "user" && chatMessages.length > 2) {
+			const minimal = [chatMessages[0], clampChatMessage(last)];
+			({ response, data } = await send(minimal));
+			if (response.ok) {
+				text = assistantTextFromContent(
+					data?.choices?.[0]?.message?.content
+				);
+			}
+		}
+	}
+
+	if (!text) {
+		const fr = data?.choices?.[0]?.finish_reason;
+		if (fr === "length") {
+			throw new Error(
+				"The orb's context is full—refresh the page for a fresh chat, or send shorter messages."
+			);
+		}
+		if (fr === "content_filter" || fr === "blocked") {
+			throw new Error(
+				"The orb withheld a reply that time—try rephrasing."
+			);
+		}
+		throw new Error("The orb returned silence—try again.");
+	}
+	return text;
 }
 
-function getInputValue() {
-	let inputVal = inputField.value;
+async function getInputValue() {
+	const inputVal = inputField.value.trim();
+	if (!inputVal) return;
 	inputField.value = "";
-	if (inputVal == "*abel*") {
-		mediaElement.pause();
-		// console.log(audio);
-		const mediaElement2 = new Audio(
-			// import.meta.env.PROD ? "/starboy.mp3" : "./static/starboy.mp3"
-			"/starboy.mp3"
-		);
-		mediaElement2.preload = "None";
+
+	if (inputVal === "*abel*") {
+		if (mediaElement) mediaElement.pause();
+		const mediaElement2 = new Audio("/starboy.mp3");
+		mediaElement2.preload = "auto";
 		audio.setMediaElementSource(mediaElement2);
 		mediaElement2.play();
-	} else {
-		responseKey.inputs.text += inputVal;
-		query(responseKey).then((response) => {
-			gsap.to(bloomPass, { threshold: 0.3, duration: 0.3 });
-			gsap.to(bloomPass, { threshold: 0.53, delay: 0.3 });
-			uniforms.uSpeed.value = 1.0;
-			responseKey = {
-				inputs: {
-					past_user_inputs: response.conversation.past_user_inputs,
-					generated_responses: response.conversation.generated_responses,
-					text: "",
-				},
-			};
-			headingDom.textContent = response.generated_text;
-			var msg = new SpeechSynthesisUtterance();
-			msg.text = response.generated_text;
-			window.speechSynthesis.speak(msg);
-			gsap.to("#response", {
-				opacity: 1,
-			});
-		});
+		return;
+	}
+
+	gsap.to("#response", { opacity: 0 });
+	uniforms.uSpeed.value = 10.0;
+	sendButton.disabled = true;
+
+	chatMessages.push({ role: "user", content: inputVal });
+
+	try {
+		const reply = await queryPollinations();
+		chatMessages.push({ role: "assistant", content: reply });
+
+		const maxMsgs = 14;
+		if (chatMessages.length > 1 + maxMsgs) {
+			chatMessages = [chatMessages[0], ...chatMessages.slice(-maxMsgs)];
+		}
+
+		gsap.to(bloomPass, { threshold: 0.3, duration: 0.3 });
+		gsap.to(bloomPass, { threshold: 0.53, delay: 0.3 });
+		uniforms.uSpeed.value = 1.0;
+		headingDom.textContent = reply;
+		const msg = new SpeechSynthesisUtterance();
+		msg.text = reply;
+		window.speechSynthesis.speak(msg);
+		gsap.to("#response", { opacity: 1 });
+	} catch (err) {
+		chatMessages.pop();
+		uniforms.uSpeed.value = 1.0;
+		headingDom.textContent =
+			err instanceof Error ? err.message : "Something went wrong.";
+		gsap.to("#response", { opacity: 1 });
+	} finally {
+		sendButton.disabled = false;
 	}
 }
