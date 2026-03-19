@@ -3,4 +3,5 @@
   publish = "dist"
 
 [build.environment]
-  NODE_VERSION = "20"
+  # Node 22+ required for Netlify Agent Runners; also avoids deprecated Node 16 builds.
+  NODE_VERSION = "22"

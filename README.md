@@ -31,7 +31,7 @@ Never commit `.env` (it is gitignored). **Do not put real keys in `.env.example`
 
 ## Netlify
 
-The repo includes `netlify.toml` with **`NODE_VERSION = "20"`** so builds and serverless functions no longer use deprecated Node 16. After pushing, trigger a new deploy; if the warning persists, clear the build cache in **Site configuration → Build & deploy → Build settings → Clear cache and deploy site**.
+`netlify.toml` sets **`NODE_VERSION = "22"`** so builds match current Netlify defaults and **Agent Runners** (which expect Node 22+). Push the file, redeploy, and if the UI still shows Node 16, set **Site configuration → Build & deploy → Environment → NODE_VERSION** to `22` and run **Clear cache and deploy site**.
 
 ## Stack
 
