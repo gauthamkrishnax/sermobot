@@ -29,6 +29,10 @@ VITE_POLLINATIONS_API_KEY=pk_your_key_here
 
 Never commit `.env` (it is gitignored). **Do not put real keys in `.env.example`.**
 
+## Netlify
+
+The repo includes `netlify.toml` with **`NODE_VERSION = "20"`** so builds and serverless functions no longer use deprecated Node 16. After pushing, trigger a new deploy; if the warning persists, clear the build cache in **Site configuration → Build & deploy → Build settings → Clear cache and deploy site**.
+
 ## Stack
 
 - [Vite](https://vitejs.dev/) 8
